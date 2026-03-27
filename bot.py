@@ -60,6 +60,9 @@ async def main():
 
     reader = TelegramClient("reader_session", API_ID, API_HASH)
     poster = TelegramClient("poster_session", API_ID, API_HASH)
+
+    # 🔥 ВАЖНО — оба через bot_token
+    await reader.start(bot_token=BOT_TOKEN)
     await poster.start(bot_token=BOT_TOKEN)
 
     seen_hashes = set()
@@ -106,7 +109,6 @@ async def main():
         except Exception as e:
             print(f"[ОШИБКА] {e}")
 
-    await reader.start()
     print("Жду новых постов...\n")
     await reader.run_until_disconnected()
 
