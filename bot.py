@@ -4,14 +4,10 @@ import os
 import hashlib
 from telethon import TelegramClient, events
 
-# ==========================================
-# ЗАПОЛНИ ЭТИ 4 СТРОКИ — БОЛЬШЕ НИЧЕГО НЕ ТРОГАЙ
-# ==========================================
-API_ID       = 12345678          # число с my.telegram.org
-API_HASH     = "сюда_вставь"     # строка с my.telegram.org
-BOT_TOKEN    = "сюда_вставь"     # токен от @BotFather
-TARGET       = "@financeabyl"    # юзернейм твоего канала
-# ==========================================
+API_ID    = int(os.environ["API_ID"])
+API_HASH  = os.environ["API_HASH"]
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+TARGET    = os.environ["TARGET"]
 
 SOURCE_CHANNELS = [
     "qara_aqqu", "nb_kz", "investingcorp", "bull_bell",
@@ -43,8 +39,7 @@ def get_hash(text):
     return hashlib.md5(text.strip().lower().encode()).hexdigest()
 
 def is_urgent(text):
-    text_lower = text.lower()
-    return any(word in text_lower for word in URGENT_WORDS)
+    return any(word in text.lower() for word in URGENT_WORDS)
 
 def is_duplicate(text, seen_texts):
     words = set(text.lower().split())
@@ -52,8 +47,7 @@ def is_duplicate(text, seen_texts):
         prev_words = set(prev.lower().split())
         if len(words) == 0:
             continue
-        overlap = len(words & prev_words) / len(words)
-        if overlap > 0.6:
+        if len(words & prev_words) / len(words) > 0.6:
             return True
     return False
 
@@ -79,7 +73,7 @@ async def main():
     @reader.on(events.NewMessage(chats=SOURCE_CHANNELS))
     async def handler(event):
         msg = event.message
-        text = getattr(msg, 'text', None) or getattr(msg, 'message', None) or ""
+        text = getattr(msg, 'message', '') or getattr(msg, 'text', '') or ""
         text = text.strip()
 
         if len(text) < 60:
@@ -99,19 +93,16 @@ async def main():
             return
 
         prefix = "🚨 СРОЧНО\n\n" if urgent else "📰\n\n"
-        caption = f"{prefix}{text}\n\n📌 @{source}"
+        post = f"{prefix}{text}\n\n📌 @{source}"
 
         try:
-            await poster.send_message(TARGET, caption)
-
+            await poster.send_message(TARGET, post)
             seen_hashes.add(h)
             seen_texts.append(text[:300])
             seen_data.append({"hash": h, "text": text[:300], "source": source})
             save_seen(seen_data)
-
             tag = "СРОЧНО" if urgent else "запостил"
             print(f"[{tag}] из @{source}: {text[:60]}...")
-
         except Exception as e:
             print(f"[ОШИБКА] {e}")
 
