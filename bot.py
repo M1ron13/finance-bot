@@ -16,6 +16,7 @@ SOURCE_CHANNELS = [
     "monetarity", "financeview", "eurobonds", "ptfinchannel",
 ]
 
+# Пост выйдет ТОЛЬКО если есть хотя бы одно финансовое слово
 FINANCE_WORDS = [
     "тенге", "доллар", "евро", "валюта", "курс",
     "банк", "кредит", "депозит", "ставка", "нбрк",
@@ -29,24 +30,23 @@ FINANCE_WORDS = [
     "ипотека", "займ", "микрофинанс", "страховк",
     "пенсионн", "енпф", "тариф", "комиссия", "процент",
     "размещени", "погашени", "казахстан", "қазақстан",
+    "halyk", "бцк", "kaspi", "forte", "jusan",
+    "нацбанк", "fintech", "финтех", "платеж",
 ]
 
+# Срочные — постим с пометкой СРОЧНО
 URGENT_WORDS = [
     "девальвация", "дефолт", "обвал", "кризис", "экстренн",
     "повысил ставку", "снизил ставку", "резко упал", "резко вырос",
 ]
 
+# Только явная реклама — минимальный список
 SPAM_WORDS = [
-    "подпишись", "подписывайтесь", "подписаться",
-    "подборка каналов", "топовых каналов", "топовые каналы",
-    "рекомендуем", "реклама", "промо", "партнёр",
-    "перейти по ссылке", "viralist", "присоединяйтесь",
-    "под управлением", "публичный портфель",
+    "подборка каналов", "топовых каналов",
+    "перейти по ссылке", "viralist",
     "розыгрыш", "giveaway", "конкурс", "приз",
-    "скидка", "только сегодня", "успей",
-    "заработай", "пассивный доход",
-    "инвестируй с нами", "наш канал", "наши каналы",
-    "перейди", "жми", "кликай",
+    "пассивный доход", "инвестируй с нами",
+    "наши каналы", "подпишись на наш",
 ]
 
 SEEN_FILE = "seen_news.json"
@@ -93,8 +93,8 @@ async def main():
 
     reader = TelegramClient("reader_session", API_ID, API_HASH)
     poster = TelegramClient("poster_session", API_ID, API_HASH)
-    await reader.start()  # читает через твой аккаунт
-    await poster.start(bot_token=BOT_TOKEN)  # постит через бота
+    await reader.start()
+    await poster.start(bot_token=BOT_TOKEN)
 
     seen_hashes = set()
     seen_data = load_seen()
@@ -115,22 +115,26 @@ async def main():
 
         source = getattr(event.chat, "username", "unknown")
 
+        # 1. Фильтр спама
         if is_spam(text):
             print(f"[СПАМ] из @{source}: {text[:60]}...")
             return
 
+        # 2. Только финансовые новости
         if not is_finance(text):
             print(f"[НЕ ФИНАНСЫ] из @{source}: {text[:60]}...")
             return
 
         h = get_hash(text)
 
+        # 3. Точный дубликат
         if h in seen_hashes:
             print(f"[ДУБЛИКАТ] из @{source}")
             return
 
         urgent = is_urgent(text)
 
+        # 4. Похожая новость
         if not urgent and is_duplicate(text, seen_texts):
             print(f"[ПОХОЖЕЕ] из @{source}")
             return
