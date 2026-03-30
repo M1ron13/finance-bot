@@ -8,51 +8,57 @@ API_ID    = int(os.environ["API_ID"])
 API_HASH  = os.environ["API_HASH"]
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 TARGET    = os.environ["TARGET"]
+PHONE     = os.environ.get("PHONE", "")
 
 SOURCE_CHANNELS = [
-    "qara_aqqu", "nb_kz", "bull_bell",
+    "qara_aqqu", "nb_kz", "investingcorp", "bull_bell",
     "finmentorkz", "manualanomics", "FINANCEkaz", "rankingkz",
     "tengenomika", "usamarke1", "financenews13", "alfawealth",
     "monetarity", "financeview", "eurobonds", "ptfinchannel",
-    "investingcorp",
 ]
 
-# Казахстанские финансовые слова — ОБЯЗАТЕЛЬНО одно из них
-KZ_FINANCE = [
-    "тенге", "қазақстан", "казахстан", "нбрк", "нацбанк",
-    "kase", "aix", "енпф", "kaspi", "halyk", "бцк", "forte",
-    "jusan", "народный банк", "банк центркредит",
-    "минфин казахстан", "акимат", "самрук",
+# Корни слов — ищем вхождение, поэтому "банк" найдёт "банковский", "банков", "банке"
+FINANCE_ROOTS = [
+    # Казахстан
+    "казахстан", "қазақстан", "нбрк", "нацбанк", "kase", "aix",
+    "енпф", "kaspi", "halyk", "бцк", "forte", "jusan", "самрук",
+    # Валюты и курсы
+    "тенге", "доллар", "евро", "валют", "курс",
+    # Банки и финансы
+    "банк", "кредит", "депозит", "ипотек", "займ", "микрофинанс",
+    # Рынки
+    "бирж", "акци", "облигац", "etf", "фонд", "индекс",
+    # Макро
+    "инфляц", "ставк", "бюджет", "ввп", "экономик", "рецессия",
+    "дефляц", "дефолт", "девальвац",
+    # Сырьё
+    "нефт", "газ", "золот", "уран", "металл", "сырь",
+    # Крипта
+    "биткоин", "крипт", "блокчейн", "стейблкоин",
+    # Глобальные
+    "фрс", "мвф", "центробанк", "минфин",
+    "санкц", "импорт", "экспорт", "торговл",
+    "дивиденд", "доходност", "прибыл", "убыток",
+    "инвестиц", "капитал", "актив", "портфел",
+    "тариф", "комисси", "процент", "купон",
+    "размещен", "погашен", "выпуск",
+    "страхов", "пенсионн",
+    # Компании
+    "мосбирж", "nasdaq", "s&p", "dow jones",
 ]
 
-# Глобальные финансовые слова — тоже подходят
-GLOBAL_FINANCE = [
-    "доллар", "евро", "валюта", "курс валют",
-    "ставка фрс", "фрс", "центробанк", "мвф",
-    "нефть", "газ", "золото", "уран",
-    "биткоин", "крипта", "криптовалюта",
-    "акции", "облигации", "биржа", "etf",
-    "инфляция", "дефляция", "рецессия",
-    "санкции", "импорт", "экспорт",
-    "дивиденды", "доходность", "ипотека",
-]
-
-# Срочные — постим с пометкой СРОЧНО
 URGENT_WORDS = [
-    "девальвация", "дефолт", "обвал рынка", "кризис",
-    "экстренное заседание", "резко упал", "резко вырос",
-    "повысил базовую ставку", "снизил базовую ставку",
+    "девальвац", "дефолт", "обвал", "кризис",
+    "экстренн", "резко упал", "резко вырос",
+    "повысил ставку", "снизил ставку",
 ]
 
-# Чёрный список — явная реклама и мусор
 BLACKLIST = [
     "подборка каналов", "топовых каналов", "наши каналы",
     "подпишись на наш", "viralist", "giveaway", "розыгрыш",
     "пассивный доход", "инвестируй с нами",
-    "перейти по ссылке", "жми сюда", "кликай",
-    # Российский мусор который не касается КЗ
-    "в госдуме", "кремль", "путин", "мобилизация",
-    "сво ", "всу ", "украин", "донбасс",
+    "в госдуме", "кремль", "мобилизац",
+    "сво ", "украин", "донбасс",
 ]
 
 SEEN_FILE = "seen_news.json"
@@ -77,7 +83,7 @@ def is_blacklisted(text):
 
 def is_finance(text):
     t = text.lower()
-    return any(word in t for word in KZ_FINANCE + GLOBAL_FINANCE)
+    return any(root in t for root in FINANCE_ROOTS)
 
 def is_urgent(text):
     t = text.lower()
@@ -89,8 +95,7 @@ def is_duplicate(text, seen_texts):
         return False
     for prev in seen_texts[-100:]:
         prev_words = set(prev.lower().split())
-        overlap = len(words & prev_words) / len(words)
-        if overlap > 0.8:
+        if len(words & prev_words) / len(words) > 0.8:
             return True
     return False
 
@@ -103,7 +108,8 @@ async def main():
 
     reader = TelegramClient("reader_session", API_ID, API_HASH)
     poster = TelegramClient("poster_session", API_ID, API_HASH)
-    await reader.start()
+
+    await reader.start(phone=PHONE)
     await poster.start(bot_token=BOT_TOKEN)
 
     seen_hashes = set()
@@ -121,30 +127,25 @@ async def main():
         text = text.strip()
         source = getattr(event.chat, "username", "unknown")
 
-        # Слишком короткий
-        if len(text) < 80:
+        if len(text) < 60:
             return
 
-        # Чёрный список
         if is_blacklisted(text):
             print(f"[БЛОК] из @{source}: {text[:60]}...")
             return
 
-        # Не финансовая новость
         if not is_finance(text):
             print(f"[НЕ ФИНАНСЫ] из @{source}: {text[:60]}...")
             return
 
         h = get_hash(text)
 
-        # Точный дубликат
         if h in seen_hashes:
             print(f"[ДУБЛИКАТ] из @{source}")
             return
 
         urgent = is_urgent(text)
 
-        # Похожая новость (80% порог — строже)
         if not urgent and is_duplicate(text, seen_texts):
             print(f"[ПОХОЖЕЕ] из @{source}")
             return
