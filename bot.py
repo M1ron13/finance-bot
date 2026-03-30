@@ -10,43 +10,49 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 TARGET    = os.environ["TARGET"]
 
 SOURCE_CHANNELS = [
-    "qara_aqqu", "nb_kz", "investingcorp", "bull_bell",
+    "qara_aqqu", "nb_kz", "bull_bell",
     "finmentorkz", "manualanomics", "FINANCEkaz", "rankingkz",
     "tengenomika", "usamarke1", "financenews13", "alfawealth",
     "monetarity", "financeview", "eurobonds", "ptfinchannel",
+    "investingcorp",
 ]
 
-# Пост выйдет ТОЛЬКО если есть хотя бы одно финансовое слово
-FINANCE_WORDS = [
-    "тенге", "доллар", "евро", "валюта", "курс",
-    "банк", "кредит", "депозит", "ставка", "нбрк",
-    "инфляция", "экономика", "бюджет", "налог", "ввп",
-    "акции", "облигации", "биржа", "kase", "aix",
-    "инвестиции", "дивиденды", "доходность", "фонд", "etf",
-    "нефть", "газ", "золото", "уран", "металл",
-    "биткоин", "крипта", "криптовалюта", "стейблкоин",
-    "фрс", "минфин", "мвф", "центробанк",
-    "импорт", "экспорт", "торговля", "санкции",
-    "ипотека", "займ", "микрофинанс", "страховк",
-    "пенсионн", "енпф", "тариф", "комиссия", "процент",
-    "размещени", "погашени", "казахстан", "қазақстан",
-    "halyk", "бцк", "kaspi", "forte", "jusan",
-    "нацбанк", "fintech", "финтех", "платеж",
+# Казахстанские финансовые слова — ОБЯЗАТЕЛЬНО одно из них
+KZ_FINANCE = [
+    "тенге", "қазақстан", "казахстан", "нбрк", "нацбанк",
+    "kase", "aix", "енпф", "kaspi", "halyk", "бцк", "forte",
+    "jusan", "народный банк", "банк центркредит",
+    "минфин казахстан", "акимат", "самрук",
+]
+
+# Глобальные финансовые слова — тоже подходят
+GLOBAL_FINANCE = [
+    "доллар", "евро", "валюта", "курс валют",
+    "ставка фрс", "фрс", "центробанк", "мвф",
+    "нефть", "газ", "золото", "уран",
+    "биткоин", "крипта", "криптовалюта",
+    "акции", "облигации", "биржа", "etf",
+    "инфляция", "дефляция", "рецессия",
+    "санкции", "импорт", "экспорт",
+    "дивиденды", "доходность", "ипотека",
 ]
 
 # Срочные — постим с пометкой СРОЧНО
 URGENT_WORDS = [
-    "девальвация", "дефолт", "обвал", "кризис", "экстренн",
-    "повысил ставку", "снизил ставку", "резко упал", "резко вырос",
+    "девальвация", "дефолт", "обвал рынка", "кризис",
+    "экстренное заседание", "резко упал", "резко вырос",
+    "повысил базовую ставку", "снизил базовую ставку",
 ]
 
-# Только явная реклама — минимальный список
-SPAM_WORDS = [
-    "подборка каналов", "топовых каналов",
-    "перейти по ссылке", "viralist",
-    "розыгрыш", "giveaway", "конкурс", "приз",
+# Чёрный список — явная реклама и мусор
+BLACKLIST = [
+    "подборка каналов", "топовых каналов", "наши каналы",
+    "подпишись на наш", "viralist", "giveaway", "розыгрыш",
     "пассивный доход", "инвестируй с нами",
-    "наши каналы", "подпишись на наш",
+    "перейти по ссылке", "жми сюда", "кликай",
+    # Российский мусор который не касается КЗ
+    "в госдуме", "кремль", "путин", "мобилизация",
+    "сво ", "всу ", "украин", "донбасс",
 ]
 
 SEEN_FILE = "seen_news.json"
@@ -58,29 +64,33 @@ def load_seen():
     return []
 
 def save_seen(seen_list):
-    seen_list = seen_list[-1000:]
+    seen_list = seen_list[-2000:]
     with open(SEEN_FILE, "w", encoding="utf-8") as f:
         json.dump(seen_list, f, ensure_ascii=False, indent=2)
 
 def get_hash(text):
     return hashlib.md5(text.strip().lower().encode()).hexdigest()
 
-def is_spam(text):
-    return any(word in text.lower() for word in SPAM_WORDS)
+def is_blacklisted(text):
+    t = text.lower()
+    return any(word in t for word in BLACKLIST)
 
 def is_finance(text):
-    return any(word in text.lower() for word in FINANCE_WORDS)
+    t = text.lower()
+    return any(word in t for word in KZ_FINANCE + GLOBAL_FINANCE)
 
 def is_urgent(text):
-    return any(word in text.lower() for word in URGENT_WORDS)
+    t = text.lower()
+    return any(word in t for word in URGENT_WORDS)
 
 def is_duplicate(text, seen_texts):
     words = set(text.lower().split())
-    for prev in seen_texts[-50:]:
+    if not words:
+        return False
+    for prev in seen_texts[-100:]:
         prev_words = set(prev.lower().split())
-        if len(words) == 0:
-            continue
-        if len(words & prev_words) / len(words) > 0.75:
+        overlap = len(words & prev_words) / len(words)
+        if overlap > 0.8:
             return True
     return False
 
@@ -109,32 +119,32 @@ async def main():
         msg = event.message
         text = getattr(msg, 'message', '') or getattr(msg, 'text', '') or ""
         text = text.strip()
-
-        if len(text) < 60:
-            return
-
         source = getattr(event.chat, "username", "unknown")
 
-        # 1. Фильтр спама
-        if is_spam(text):
-            print(f"[СПАМ] из @{source}: {text[:60]}...")
+        # Слишком короткий
+        if len(text) < 80:
             return
 
-        # 2. Только финансовые новости
+        # Чёрный список
+        if is_blacklisted(text):
+            print(f"[БЛОК] из @{source}: {text[:60]}...")
+            return
+
+        # Не финансовая новость
         if not is_finance(text):
             print(f"[НЕ ФИНАНСЫ] из @{source}: {text[:60]}...")
             return
 
         h = get_hash(text)
 
-        # 3. Точный дубликат
+        # Точный дубликат
         if h in seen_hashes:
             print(f"[ДУБЛИКАТ] из @{source}")
             return
 
         urgent = is_urgent(text)
 
-        # 4. Похожая новость
+        # Похожая новость (80% порог — строже)
         if not urgent and is_duplicate(text, seen_texts):
             print(f"[ПОХОЖЕЕ] из @{source}")
             return
@@ -145,10 +155,10 @@ async def main():
         try:
             await poster.send_message(TARGET, post)
             seen_hashes.add(h)
-            seen_texts.append(text[:300])
-            seen_data.append({"hash": h, "text": text[:300], "source": source})
+            seen_texts.append(text[:500])
+            seen_data.append({"hash": h, "text": text[:500], "source": source})
             save_seen(seen_data)
-            tag = "СРОЧНО" if urgent else "запостил"
+            tag = "🚨 СРОЧНО" if urgent else "✅ запостил"
             print(f"[{tag}] из @{source}: {text[:60]}...")
         except Exception as e:
             print(f"[ОШИБКА] {e}")
