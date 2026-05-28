@@ -3,12 +3,14 @@ import json
 import os
 import hashlib
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 
-API_ID    = int(os.environ["API_ID"])
-API_HASH  = os.environ["API_HASH"]
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-TARGET    = os.environ["TARGET"]
-PHONE     = os.environ.get("PHONE", "")
+API_ID         = int(os.environ["API_ID"])
+API_HASH       = os.environ["API_HASH"]
+BOT_TOKEN      = os.environ["BOT_TOKEN"]
+TARGET         = os.environ["TARGET"]
+PHONE          = os.environ.get("PHONE", "")
+SESSION_STRING = os.environ["SESSION_STRING"]
 
 SOURCE_CHANNELS = [
     "qara_aqqu", "nb_kz", "investingcorp", "bull_bell",
@@ -106,10 +108,10 @@ async def main():
     print(f"  Пощу в {TARGET}")
     print("=" * 40)
 
-    reader = TelegramClient("reader_session", API_ID, API_HASH)
+    reader = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     poster = TelegramClient("poster_session", API_ID, API_HASH)
 
-    await reader.start(phone=PHONE)
+    await reader.start()
     await poster.start(bot_token=BOT_TOKEN)
 
     seen_hashes = set()
